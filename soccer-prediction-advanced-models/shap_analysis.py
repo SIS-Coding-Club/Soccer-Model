@@ -278,17 +278,32 @@ def plot_shap_waterfall(shap_values_dict, X, feature_names, output_dir, timestam
     print(f"  💾 Saved: {filepath}")
 
 
-def generate_feature_importance_report(shap_values_dict, feature_names, output_dir, timestamp):
+def generate_feature_importance_report(shap_values_dict, feature_names, output_dir, timestamp, exclude_target_leakage=True):
     """
     Generate text report of feature importance across all targets.
+    
+    Args:
+        exclude_target_leakage: If True, excludes each target from its own feature importance
+                               to avoid circular importance (e.g., aerials_won predicting aerials_won)
     """
     print("\n📝 Generating feature importance report...")
+    
+    if exclude_target_leakage:
+        print("   ⚠️  Excluding target leakage (each target excluded from its own features)")
     
     # Calculate mean absolute SHAP per feature per target
     importance_matrix = []
     
     for target, shap_vals in shap_values_dict.items():
         feature_importance = np.mean(np.abs(shap_vals), axis=0)
+        
+        # Exclude target leakage: zero out features that match the target name
+        if exclude_target_leakage:
+            for i, feat_name in enumerate(feature_names):
+                # Check for exact match or if target/feature names contain each other
+                if target == feat_name or feat_name in target or target in feat_name:
+                    feature_importance[i] = 0  # Zero out leaked feature
+        
         importance_matrix.append(feature_importance)
     
     importance_df = pd.DataFrame(
@@ -300,6 +315,10 @@ def generate_feature_importance_report(shap_values_dict, feature_names, output_d
     # Global importance (averaged across targets)
     global_importance = importance_df.mean(axis=0).sort_values(ascending=False)
     
+    # If excluding leakage, remove zero-importance features from global ranking
+    if exclude_target_leakage:
+        global_importance = global_importance[global_importance > 0]
+    
     # Create report
     report_path = os.path.join(output_dir, f'shap_feature_importance_report_{timestamp}.txt')
     
@@ -310,7 +329,16 @@ def generate_feature_importance_report(shap_values_dict, feature_names, output_d
         f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Number of Targets: {len(shap_values_dict)}\n")
         f.write(f"Number of Features: {len(feature_names)}\n")
-        f.write(f"Standard: Model Output Standard (SHAP on predicted values)\n\n")
+        f.write(f"Standard: Model Output Standard (SHAP on predicted values)\n")
+        f.write(f"Target Leakage Excluded: {'Yes' if exclude_target_leakage else 'No'}\n\n")
+        
+        if exclude_target_leakage:
+            f.write("="*80 + "\n")
+            f.write("NOTE: TARGET LEAKAGE EXCLUDED\n")
+            f.write("="*80 + "\n\n")
+            f.write("This report excludes each target from its own feature importance.\n")
+            f.write("This answers: 'What features predict OTHER metrics?'\n")
+            f.write("Example: When predicting aerials_duels_won, aerials_duels_won feature is excluded.\n\n")
         
         f.write("="*80 + "\n")
         f.write("GLOBAL FEATURE IMPORTANCE (Averaged Across All Targets)\n")
@@ -319,9 +347,13 @@ def generate_feature_importance_report(shap_values_dict, feature_names, output_d
         
         for rank, (feature, importance) in enumerate(global_importance.items(), 1):
             f.write(f"{rank:2d}. {feature:35s} | Importance: {importance:.6f}\n")
-        
-        f.write("\n\n")
-        f.write("="*80 + "\n")
+        # If excluding leakage, show only non-zero features
+            if exclude_target_leakage:
+                target_importance = target_importance[target_importance > 0]
+            
+            f.write(f"\nTarget: {target}\n")
+            f.write("-" * 80 + "\n")
+            f.write("Top 10 features" + (" (excluding self)" if exclude_target_leakage else "") + "
         f.write("FEATURE IMPORTANCE PER TARGET\n")
         f.write("="*80 + "\n\n")
         
@@ -338,7 +370,16 @@ def generate_feature_importance_report(shap_values_dict, feature_names, output_d
             f.write("\n")
         
         f.write("\n")
-        f.write("="*80 + "\n")
+        f.write("="*80 + "\n")")
+        
+        if exclude_target_leakage:
+            f.write("\n")
+            f.write("GLOBAL IMPORTANCE (No Leakage):\n")
+            f.write("- These features are most predictive ACROSS ALL targets\n")
+            f.write("- They represent 'overall most important' features for predicting OTHER metrics\n")
+            f.write("- High global importance = versatile predictor useful for many outcomes\n")
+        
+        f.write("
         f.write("INTERPRETATION GUIDE\n")
         f.write("="*80 + "\n\n")
         f.write("SHAP values represent the contribution of each feature to the prediction:\n\n")
@@ -463,9 +504,17 @@ def main():
         plot_shap_waterfall(shap_values_dict, X_sample, feature_names, output_dir, 
                            timestamp, most_important_target, sample_idx=0)
         
-        # 5. Feature importance report
+        # 5. Feature importance report (with and without target leakage)
+        print("\n📊 Generating feature importance reports...")
+        
+        # Report WITH target leakage (original)
+        importance_df_with_leak, global_importance_with_leak = generate_feature_importance_report(
+            shap_values_dict, feature_names, output_dir, timestamp + "_with_leakage", exclude_target_leakage=False
+        )
+        
+        # Report WITHOUT target leakage (corrected)
         importance_df, global_importance = generate_feature_importance_report(
-            shap_values_dict, feature_names, output_dir, timestamp
+            shap_values_dict, feature_names, output_dir, timestamp, exclude_target_leakage=True
         )
         
     except Exception as e:

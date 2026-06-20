@@ -12,7 +12,6 @@ from selenium.common.exceptions import TimeoutException
 
 import warnings
 import pandas as pd
-import soccerdata as sd
 import sys
 from pathlib import Path
 warnings.filterwarnings("ignore")
@@ -277,3 +276,14 @@ if __name__ == "__main__":
     SAVE_DIR = Path(__file__).parent.parent.parent / "data" / "raw"  
     fbref_api = FBREFAPI(years, list_stats, league, SAVE_DIR)
     fbref_api.combine_total()
+
+
+"""
+
+{premier_leaguge: 13, }
+
+
+
+
+
+"""
